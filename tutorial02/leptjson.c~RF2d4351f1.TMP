@@ -1,8 +1,7 @@
 #include "leptjson.h"
 #include <assert.h>  /* assert() */
 #include <stdlib.h>  /* NULL, strtod() */
-#include <errno.h>   /* errno, ERANGE */
-#include <math.h>    /* HUGE_VAL */
+#include <stdbool.h>
 
 #define EXPECT(c, ch)       do { assert(*c->json == (ch)); c->json++; } while(0)
 #define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
@@ -61,155 +60,140 @@ static int lept_parse_null(lept_context* c, lept_value* v) {
 #endif
 
 
-static const char * validate_number(lept_context* c)
+static bool validate_number(lept_context* c)
 {
 	const char *ch = c->json;
 	int state = 0;
-	while (1)
+	while (true)
 	{
 		switch (state)
 		{
-		case 0:
-		{
-			if (*ch == '0')
+			case 0:
 			{
-				state = 2;
-				ch++;
+				if (*ch == '0')
+				{
+					state = 2;
+					ch++;
+				}
+				else if (*ch == '-')
+				{
+					state = 1;
+					ch++;
+				}
+				else if (ISDIGIT1TO9(*ch))
+				{
+					state = 3;
+					ch++;
+				}
+				else state = 9;
+				break;
 			}
-			else if (*ch == '-')
+			case 1:
 			{
-				state = 1;
-				ch++;
-			}
-			else if (ISDIGIT1TO9(*ch))
-			{
-				state = 3;
-				ch++;
-			}
-			else state = 9;
-			break;
-		}
-		case 1:
-		{
 
-			if (*ch == '0')
-			{
-				state = 2;
-				ch++;
+				if (*ch == '0')
+				{
+					state = 2;
+					ch++;
+				}
+				else if (ISDIGIT1TO9(*ch))
+				{
+					state = 3;
+					ch++;
+				}
+				else state = 9;
+				break;
 			}
-			else if (ISDIGIT1TO9(*ch))
+			case 2:
 			{
-				state = 3;
-				ch++;
+				if (*ch == '.')
+				{
+					state = 4;
+					ch++;
+				}
+				else return true;
+				break;
 			}
-			else state = 9;
-			break;
-		}
-		case 2:
-		{
-			if (*ch == '.')
+			case 3:
 			{
-				state = 4;
-				ch++;
+				if (ISDIGIT(*ch))
+					ch++;
+				else if (*ch == '.')
+				{
+					state = 4;
+					ch++;
+				}
+				else return true;
+				break;
 			}
-			else if (*ch == 'e' || *ch == 'E')
+			case 4:
 			{
-				state = 6;
-				ch++;
+				if (ISDIGIT(*ch))
+				{
+					state = 5;
+					ch++;
+				}
+				else state = 9;
+				break;
 			}
-			else return ch;
-			break;
-		}
-		case 3:
-		{
-			if (ISDIGIT(*ch))
-				ch++;
-			else if (*ch == '.')
+			case 5:
 			{
-				state = 4;
-				ch++;
+				if (ISDIGIT(*ch))
+					ch++;
+				else if (*ch == 'e' || *ch == 'E')
+				{
+					state = 6;
+					ch++;
+				}
+				else return true;
+				break;
 			}
-			else if (*ch == 'e' || *ch == 'E')
+			case 6:
 			{
-				state = 6;
-				ch++;
+				if (ISDIGIT(*ch))
+				{
+					state = 8;
+					ch++;
+				}
+				else if (*ch == '+' || *ch == '-')
+				{
+					state = 7;
+					ch++;
+				}
+				else state = 9;
+				break;
 			}
-			else return ch;
-			break;
-		}
-		case 4:
-		{
-			if (ISDIGIT(*ch))
+			case 7:
 			{
-				state = 5;
-				ch++;
+				if (ISDIGIT(*ch))
+				{
+					state = 8;
+					ch++;
+				}
+				else state = 9;
+				break;
 			}
-			else state = 9;
-			break;
-		}
-		case 5:
-		{
-			if (ISDIGIT(*ch))
-				ch++;
-			else if (*ch == 'e' || *ch == 'E')
+			case 8:
 			{
-				state = 6;
-				ch++;
+
+				break;
 			}
-			else return ch;
-			break;
-		}
-		case 6:
-		{
-			if (ISDIGIT(*ch))
+			default:
 			{
-				state = 8;
-				ch++;
+				return false;
 			}
-			else if (*ch == '+' || *ch == '-')
-			{
-				state = 7;
-				ch++;
-			}
-			else state = 9;
-			break;
-		}
-		case 7:
-		{
-			if (ISDIGIT(*ch))
-			{
-				state = 8;
-				ch++;
-			}
-			else state = 9;
-			break;
-		}
-		case 8:
-		{
-			if (ISDIGIT(*ch))
-				ch++;
-			else return ch;
-			break;
-		}
-		default:
-			return c->json;
 		}
 	}
-	return c->json;
+	return false;
 }
 
 
 static int lept_parse_number(lept_context* c, lept_value* v) {
-	const char* end = validate_number(c);
-	if (c->json == end)return LEPT_PARSE_INVALID_VALUE;
-	v->n = strtod(c->json, NULL);//here is bug
-	if (errno == ERANGE && (v->n == HUGE_VAL || v->n == -HUGE_VAL))
-		return LEPT_PARSE_NUMBER_TOO_BIG;
-	/*
+	char* end;
+	if (!validate_number(c))return LEPT_PARSE_INVALID_VALUE;
+	v->n = strtod(c->json, &end);
 	if (c->json == end)
-	return LEPT_PARSE_INVALID_VALUE;
-	*/
-
+		return LEPT_PARSE_INVALID_VALUE;
 	c->json = end;
 	v->type = LEPT_NUMBER;
 	return LEPT_PARSE_OK;
